@@ -129,6 +129,10 @@ code   { background: var(--surface2); padding: 0.1em 0.35em; border-radius: 4px;
   padding: 0.25rem 0.6rem; border-radius: 5px; letter-spacing: 0.05em;
 }
 .pc-date { font-size: 0.82rem; color: var(--muted); }
+.time-left {
+  font-size: 0.72rem; font-weight: 700; color: var(--barca-gold);
+  border: 1px solid rgba(237,187,0,0.35); padding: 0.2rem 0.5rem; border-radius: 4px; margin-left: auto;
+}
 .locked-badge {
   font-size: 0.72rem; font-weight: 700; color: var(--muted);
   border: 1px solid var(--border); padding: 0.2rem 0.5rem; border-radius: 4px; margin-left: auto;

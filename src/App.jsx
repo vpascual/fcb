@@ -32,6 +32,20 @@ const PT = {
   0: { icon: '✗',  cls: 'pts-0', text: 'Incorrecte'         },
 }
 
+// ─── Countdown helper ─────────────────────────────────────────────────────────
+function timeLeft(matchDate) {
+  const diff = matchDate - new Date()
+  if (diff <= 0) return null
+  const totalMin = Math.floor(diff / 60_000)
+  const days  = Math.floor(totalMin / (60 * 24))
+  const hours = Math.floor((totalMin % (60 * 24)) / 60)
+  const mins  = totalMin % 60
+  if (days >= 2)  return `${days} dies`
+  if (days === 1) return `${hours > 0 ? `1d ${hours}h` : '1 dia'}`
+  if (hours > 0)  return `${hours}h ${mins}m`
+  return `${mins}m`
+}
+
 // ─── ESPN: upcoming matches ───────────────────────────────────────────────────
 function dateStr(d) {
   const y = d.getUTCFullYear()
@@ -423,6 +437,7 @@ function PredictTab({
 function PredictCard({ match, player, oppId, predH, predA, onH, onA, onSave, saving, savedMsg, myPredStored, oppPred }) {
   const now = new Date()
   const isLocked = match.date < now
+  const remaining = !isLocked ? timeLeft(match.date) : null
 
   const playerLabel = { victor: '👨 Victor', max: '👦 Max' }
   const oppLabel    = { victor: '👨 Victor', max: '👦 Max' }
@@ -433,7 +448,10 @@ function PredictCard({ match, player, oppId, predH, predA, onH, onA, onSave, sav
       <div className="pc-header">
         <span className="pc-league" style={{ background: match.leagueColor }}>{match.league}</span>
         <span className="pc-date">{match.dateStr} · {match.timeStr}</span>
-        {isLocked && <span className="locked-badge">🔒 Tancat</span>}
+        {isLocked
+          ? <span className="locked-badge">🔒 Tancat</span>
+          : remaining && <span className="time-left">⏱ {remaining} per apostar</span>
+        }
       </div>
 
       {/* Teams */}
