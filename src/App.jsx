@@ -668,11 +668,14 @@ function StandingsTab({ scoredMatches, standings, loading }) {
   if (loading) return <Spinner label="Loading standings…" />
 
   if (scoredMatches.length === 0) return (
-    <EmptyCard icon="🏆" text="No scored matches yet.">
-      <p className="muted" style={{ marginTop: '0.5rem' }}>
-        Once you both submit predictions and a match is played,<br />points will appear here automatically.
-      </p>
-    </EmptyCard>
+    <div>
+      <EmptyCard icon="🏆" text="No scored matches yet.">
+        <p className="muted" style={{ marginTop: '0.5rem' }}>
+          Once you both submit predictions and a match is played,<br />points will appear here automatically.
+        </p>
+      </EmptyCard>
+      <ScoringGuide />
+    </div>
   )
 
   const leader = standings.victor > standings.max ? 'victor'
@@ -685,6 +688,8 @@ function StandingsTab({ scoredMatches, standings, loading }) {
         <div className="bsc-vs">vs</div>
         <BigPlayerCard id="max"    emoji="👦" label="Max"    pts={standings.max}    leading={leader === 'max'}    />
       </div>
+
+      <ScoringGuide />
 
       <h2 className="section-title" style={{ marginTop: '2rem' }}>Match breakdown</h2>
       <div className="breakdown">
@@ -739,6 +744,33 @@ function BigPlayerCard({ emoji, label, pts, leading }) {
       <div className="bpc-emoji">{emoji}</div>
       <div className="bpc-name">{label}</div>
       <div className="bpc-pts">{pts}<span className="bpc-label">pts</span></div>
+    </div>
+  )
+}
+
+// ─── Scoring guide ────────────────────────────────────────────────────────────
+function ScoringGuide() {
+  const rules = [
+    { icon: '🎯', cls: 'pts-5', pts: '5 points', desc: 'Exact score — both goals spot on', example: 'e.g. predict 2–1, actual 2–1' },
+    { icon: '⭐', cls: 'pts-3', pts: '3 points', desc: 'Right result & goal difference',    example: 'e.g. predict 3–1, actual 4–2 (both wins by 2)' },
+    { icon: '✓',  cls: 'pts-1', pts: '1 point',  desc: 'Right result only (W / D / L)',     example: 'e.g. predict 1–0, actual 3–1' },
+    { icon: '✗',  cls: 'pts-0', pts: '0 points', desc: 'Wrong result',                      example: 'e.g. predict a win, Barcelona loses' },
+  ]
+  return (
+    <div className="scoring-guide">
+      <h2 className="scoring-guide-title">How points are awarded</h2>
+      <div className="scoring-rules">
+        {rules.map(r => (
+          <div key={r.pts} className="scoring-rule">
+            <span className={`sr-icon ${r.cls}`}>{r.icon}</span>
+            <div className="sr-body">
+              <span className={`sr-pts ${r.cls}`}>{r.pts}</span>
+              <span className="sr-desc">{r.desc}</span>
+              <span className="sr-example">{r.example}</span>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
