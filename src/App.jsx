@@ -181,71 +181,78 @@ async function savePrediction(matchId, player, h, a) {
 }
 
 // ─── ESPN: player stats ───────────────────────────────────────────────────────
-// ESPN season year = start year of the season (2025 → 2025/26, 2024 → 2024/25)
+// ESPN season year = start year of season (2025 → 2025/26, 2024 → 2024/25)
 const PLAYER_SEASON_LABELS = { '2025': '2025/26', '2024': '2024/25', '2023': '2023/24' }
+const PLAYER_CACHE_TTL = 12 * 60 * 60 * 1000  // 12 h
 
+// Radar axes: attacking at top (0°, 60°, 300°), defensive at bottom (120°, 180°, 240°)
+const RADAR_AXES = [
+  { key: 'goals',          label: 'Gols'    },  // 0°   top          ← atac
+  { key: 'assists',        label: 'Assist.' },  // 60°  sup-dreta    ← atac
+  { key: 'totalShots',     label: 'Tirs'    },  // 120° inf-dreta    ← esforç
+  { key: 'foulsCommitted', label: 'Pressió' },  // 180° baix         ← defensa
+  { key: 'foulsWon',       label: 'Duels'   },  // 240° inf-esquerra ← defensa
+  { key: 'shotsOnTarget',  label: 'Tirs/P'  },  // 300° sup-esquerra ← atac
+]
+
+// Position → display group
+function posGroup(pos) {
+  const p = (pos ?? '').toUpperCase()
+  if (['G', 'GK'].includes(p)) return 'Porter'
+  if (p.startsWith('CD') || ['CB','LB','RB','LWB','RWB','DF','SW','D'].includes(p)) return 'Defenses'
+  if (['F','FW','ST','CF','LW','RW','SS'].includes(p)) return 'Davanters'
+  return 'Migcampistes'
+}
+
+// Single API call with localStorage caching
 async function fetchPlayerStats(seasonYear = '2025') {
+  const cacheKey = `barca_players_${seasonYear}`
   try {
-    // 1. Get La Liga schedule to find all completed match IDs for the season
-    const schedRes = await fetch(
-      `https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/teams/${BARCA_ID}/schedule?season=${seasonYear}`
+    const cached = localStorage.getItem(cacheKey)
+    if (cached) {
+      const { ts, data } = JSON.parse(cached)
+      if (Date.now() - ts < PLAYER_CACHE_TTL) return data
+    }
+  } catch { /* ignore */ }
+
+  try {
+    const res = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/teams/${BARCA_ID}/roster?enable=stats&season=${seasonYear}`
     )
-    if (!schedRes.ok) return []
-    const schedData = await schedRes.json()
-    const matchIds = (schedData.events ?? [])
-      .filter(e => e.competitions?.[0]?.status?.type?.completed)
-      .map(e => e.id)
+    if (!res.ok) return []
+    const d = await res.json()
 
-    if (matchIds.length === 0) return []
-
-    // 2. Fetch all match summaries in parallel — each contains per-match player stats
-    const summaries = await Promise.all(
-      matchIds.map(id =>
-        fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/summary?event=${id}`)
-          .then(r => r.ok ? r.json() : null)
-          .catch(() => null)
-      )
-    )
-
-    // 3. Aggregate per-player stats across all matches
-    const playerMap = {}
-    summaries.filter(Boolean).forEach(summary => {
-      const barcaRoster = (summary.rosters ?? []).find(r => r.team?.id === BARCA_ID)
-      if (!barcaRoster) return
-
-      ;(barcaRoster.roster ?? []).forEach(entry => {
-        const ath = entry.athlete
-        if (!ath) return
-        const s = {}
-        ;(entry.stats ?? []).forEach(stat => { s[stat.name] = stat.value ?? 0 })
-
-        const id = ath.id
-        if (!playerMap[id]) {
-          playerMap[id] = {
-            id,
-            name:         ath.fullName ?? ath.displayName ?? '',
-            shortName:    ath.shortName ?? ath.displayName ?? '',
-            jersey:       entry.jersey ?? ath.jersey ?? '',
-            position:     entry.position?.abbreviation ?? ath.position?.abbreviation ?? '?',
-            photo:        `https://a.espncdn.com/i/headshots/soccer/players/full/${id}.png`,
-            goals: 0, assists: 0, appearances: 0,
-            yellowCards: 0, redCards: 0, saves: 0, goalsConceded: 0,
-          }
-        }
-        const p = playerMap[id]
-        p.goals         += s.totalGoals    ?? 0
-        p.assists       += s.goalAssists   ?? 0
-        p.appearances   += s.appearances   ?? 0
-        p.yellowCards   += s.yellowCards   ?? 0
-        p.redCards      += s.redCards      ?? 0
-        p.saves         += s.saves         ?? 0
-        p.goalsConceded += s.goalsConceded ?? 0
+    const players = (d.athletes ?? []).map(ath => {
+      const statsMap = {}
+      ;(ath.statistics?.splits?.categories ?? []).forEach(cat => {
+        ;(cat.stats ?? []).forEach(s => { statsMap[s.name] = s.value ?? 0 })
       })
-    })
-
-    return Object.values(playerMap)
-      .filter(p => p.appearances > 0)
+      const appearances = statsMap.appearances ?? 0
+      if (appearances === 0) return null
+      return {
+        id:             ath.id,
+        name:           ath.fullName ?? ath.displayName ?? '',
+        shortName:      ath.shortName ?? ath.displayName ?? '',
+        jersey:         ath.jersey ?? '',
+        position:       ath.position?.abbreviation ?? '?',
+        goals:          statsMap.totalGoals    ?? 0,
+        assists:        statsMap.goalAssists   ?? 0,
+        shotsOnTarget:  statsMap.shotsOnTarget ?? 0,
+        totalShots:     statsMap.totalShots    ?? 0,
+        foulsWon:       statsMap.foulsSuffered ?? 0,
+        foulsCommitted: statsMap.foulsCommitted ?? 0,
+        yellowCards:    statsMap.yellowCards   ?? 0,
+        redCards:       statsMap.redCards      ?? 0,
+        appearances,
+        saves:          statsMap.saves         ?? 0,
+        shotsFaced:     statsMap.shotsFaced    ?? 0,
+        goalsConceded:  statsMap.goalsConceded ?? 0,
+      }
+    }).filter(Boolean)
       .sort((a, b) => b.goals - a.goals || b.assists - a.assists || b.appearances - a.appearances)
+
+    try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: players })) } catch { }
+    return players
   } catch { return [] }
 }
 
@@ -971,14 +978,29 @@ function SetupBanner() {
 }
 
 // ─── Players tab ───────────────────────────────────────────────────────────────
+const POS_COLOR = { G: '#f39c12', GK: '#f39c12', D: '#3498db', M: '#27ae60', F: '#e74c3c', FW: '#e74c3c' }
+const GROUPS    = ['Porter', 'Defenses', 'Migcampistes', 'Davanters']
+
 function PlayersTab({ stats, loading, season, onSeason }) {
-  const POS_ORDER = { GK: 0, G: 0, D: 1, M: 2, F: 3, FW: 3 }
-  const sorted = [...stats].sort((a, b) => {
-    const pa = POS_ORDER[a.position] ?? 4
-    const pb = POS_ORDER[b.position] ?? 4
-    if (pa !== pb) return pa - pb
-    return b.goals - a.goals || b.assists - a.assists
-  })
+  // Team max values per metric for radar normalization
+  const maxValues = useMemo(() => {
+    const m = {}
+    RADAR_AXES.forEach(ax => {
+      m[ax.key] = Math.max(1, ...stats.map(p => p[ax.key] ?? 0))
+    })
+    return m
+  }, [stats])
+
+  // Group by position
+  const grouped = useMemo(() => {
+    const g = {}
+    GROUPS.forEach(grp => { g[grp] = [] })
+    stats.forEach(p => {
+      const grp = posGroup(p.position)
+      ;(g[grp] ?? g['Migcampistes']).push(p)
+    })
+    return g
+  }, [stats])
 
   return (
     <div>
@@ -997,62 +1019,158 @@ function PlayersTab({ stats, loading, season, onSeason }) {
         ? <Spinner label="Carregant estadístiques dels jugadors…" />
         : stats.length === 0
         ? <EmptyCard icon="📊" text="No s'han trobat estadístiques per a aquesta temporada." />
-        : (
-          <div className="players-grid">
-            {sorted.map(p => <PlayerCard key={p.id} player={p} />)}
-          </div>
-        )
+        : GROUPS.filter(g => (grouped[g]?.length ?? 0) > 0).map(grp => (
+            <section key={grp} style={{ marginBottom: '2rem' }}>
+              <h2 className="section-title">{grp}</h2>
+              <div className="players-grid">
+                {grouped[grp].map(p => <PlayerCard key={p.id} player={p} maxValues={maxValues} />)}
+              </div>
+            </section>
+          ))
       }
     </div>
   )
 }
 
-const POS_COLOR = { GK: '#f39c12', G: '#f39c12', D: '#3498db', M: '#27ae60', F: '#e74c3c', FW: '#e74c3c' }
-
-function PlayerCard({ player: p }) {
+function PlayerCard({ player: p, maxValues }) {
   const posColor = POS_COLOR[p.position] ?? POS_COLOR[p.position?.[0]] ?? 'var(--muted)'
-  const isGK = ['GK', 'G'].includes(p.position)
+  const isGK     = ['G', 'GK'].includes(p.position)
+  const initials = (p.shortName || p.name).split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+
   return (
     <div className="player-card">
-      <div className="plc-photo-wrap">
-        <img src={p.photo} alt={p.shortName} className="plc-photo"
-          onError={e => { e.target.style.display = 'none' }} />
-        <span className="plc-jersey">#{p.jersey}</span>
-        <span className="plc-pos" style={{ background: posColor }}>{p.position}</span>
+      {/* Header: avatar + name + position */}
+      <div className="plc-header">
+        <div className="plc-avatar" style={{ borderColor: posColor }}>
+          <span className="plc-avatar-num">{p.jersey || initials}</span>
+          <span className="plc-avatar-pos" style={{ background: posColor }}>{p.position}</span>
+        </div>
+        <div className="plc-info">
+          <span className="plc-name">{p.shortName || p.name}</span>
+          <span className="plc-apps">{p.appearances} partits</span>
+        </div>
       </div>
-      <div className="plc-name">{p.shortName || p.name}</div>
-      <div className="plc-stats">
-        {isGK
-          ? <>
-              <PlcStat val={p.appearances}   label="Partits" />
-              {p.saves > 0         && <PlcStat val={p.saves}         label="Aturades" />}
-              {p.goalsConceded > 0 && <PlcStat val={p.goalsConceded} label="Gols rebuts" />}
-            </>
-          : <>
-              <PlcStat val={p.goals}       label="Gols" highlight={p.goals > 0} />
-              <PlcStat val={p.assists}     label="Assist." />
-              <PlcStat val={p.appearances} label="Partits" />
-            </>
-        }
-        {(p.yellowCards > 0 || p.redCards > 0) && (
-          <div className="plc-stat">
-            <span className="plc-val plc-cards">
-              {p.yellowCards > 0 && <span className="card-y">{p.yellowCards}</span>}
-              {p.redCards    > 0 && <span className="card-r">{p.redCards}</span>}
-            </span>
-            <span className="plc-label">Targes</span>
+
+      {/* Radar or GK stats */}
+      {isGK
+        ? <div className="plc-gk-grid">
+            <GkStat val={p.appearances}   label="Partits" />
+            <GkStat val={p.saves}         label="Aturades" />
+            <GkStat val={p.shotsFaced}    label="Tirs rebuts" />
+            <GkStat val={p.goalsConceded} label="Gols encaixats" />
           </div>
-        )}
-      </div>
+        : <RadarChart player={p} maxValues={maxValues} />
+      }
+
+      {/* Bottom stats strip (outfield only) */}
+      {!isGK && (
+        <div className="plc-strip">
+          <StripStat icon="⚽" val={p.goals}         label="Gols" gold />
+          <StripStat icon="🎯" val={p.assists}       label="Assist." />
+          <StripStat icon="👟" val={p.shotsOnTarget} label="Tirs/P" />
+          <StripStat icon="💪" val={p.foulsWon}      label="Duels" />
+          {p.yellowCards > 0 && <span className="card-y">{p.yellowCards}</span>}
+          {p.redCards    > 0 && <span className="card-r">{p.redCards}</span>}
+        </div>
+      )}
     </div>
   )
 }
 
-function PlcStat({ val, label, highlight }) {
+function GkStat({ val, label }) {
   return (
-    <div className="plc-stat">
-      <span className={`plc-val${highlight ? ' plc-goals' : ''}`}>{val}</span>
-      <span className="plc-label">{label}</span>
+    <div className="plc-gk-stat">
+      <span className="plc-gk-val">{Math.round(val)}</span>
+      <span className="plc-gk-label">{label}</span>
     </div>
+  )
+}
+
+function StripStat({ icon, val, label, gold }) {
+  return (
+    <div className="plc-strip-stat">
+      <span className={`plc-strip-val${gold ? ' gold' : ''}`}>{Math.round(val)}</span>
+      <span className="plc-strip-label">{icon} {label}</span>
+    </div>
+  )
+}
+
+// ─── Radar chart ───────────────────────────────────────────────────────────────
+function RadarChart({ player, maxValues, size = 180 }) {
+  const N  = RADAR_AXES.length
+  const cx = size / 2
+  const cy = size / 2
+  const R  = size * 0.30      // polygon radius
+  const LABEL_OFFSET = 18
+  const LEVELS = 4
+
+  const angleOf = i => (i / N) * 2 * Math.PI - Math.PI / 2   // 0 = top
+
+  const toXY = (r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)]
+
+  // Grid polygon points for one level
+  const gridPoints = level => {
+    const r = R * ((level + 1) / LEVELS)
+    return RADAR_AXES.map((_, i) => toXY(r, angleOf(i)).join(',')).join(' ')
+  }
+
+  // Data polygon
+  const dataPts = RADAR_AXES.map((ax, i) => {
+    const frac = Math.min((player[ax.key] ?? 0) / maxValues[ax.key], 1)
+    return toXY(R * frac, angleOf(i))
+  })
+  const dataPath = dataPts.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ') + 'Z'
+
+  // Label positions
+  const labels = RADAR_AXES.map((ax, i) => {
+    const a = angleOf(i)
+    const [x, y] = toXY(R + LABEL_OFFSET, a)
+    const anchor = x > cx + 4 ? 'start' : x < cx - 4 ? 'end' : 'middle'
+    return { ...ax, x: x.toFixed(1), y: y.toFixed(1), anchor }
+  })
+
+  const vb = `${-LABEL_OFFSET} ${-LABEL_OFFSET} ${size + LABEL_OFFSET * 2} ${size + LABEL_OFFSET * 2}`
+
+  return (
+    <svg width={size} height={size} viewBox={vb} className="radar-svg">
+      {/* Subtle attack/defense shading */}
+      <path d={`M${cx},${cy} ${RADAR_AXES.slice(0,3).concat(RADAR_AXES[5]).map((_,i2) => {
+        const idx = [0,1,2,5][i2]; const [x,y] = toXY(R,angleOf(idx)); return `L${x.toFixed(1)},${y.toFixed(1)}`
+      }).join(' ')} Z`} fill="rgba(237,187,0,0.04)" />
+      <path d={`M${cx},${cy} ${[2,3,4].map(idx => {
+        const [x,y]=toXY(R,angleOf(idx)); return `L${x.toFixed(1)},${y.toFixed(1)}`
+      }).join(' ')} Z`} fill="rgba(120,120,160,0.05)" />
+
+      {/* Grid levels */}
+      {Array.from({ length: LEVELS }, (_, l) => (
+        <polygon key={l} points={gridPoints(l)} fill="none"
+          stroke={`rgba(255,255,255,${0.05 + l * 0.025})`} strokeWidth="0.75" />
+      ))}
+
+      {/* Axes */}
+      {RADAR_AXES.map((_, i) => {
+        const [x2, y2] = toXY(R, angleOf(i))
+        return <line key={i} x1={cx} y1={cy} x2={x2.toFixed(1)} y2={y2.toFixed(1)}
+          stroke="rgba(255,255,255,0.12)" strokeWidth="0.75" />
+      })}
+
+      {/* Axis labels */}
+      {labels.map((l, i) => (
+        <text key={i} x={l.x} y={l.y} textAnchor={l.anchor} dominantBaseline="middle"
+          fontSize="8.5" fontWeight="600"
+          fill={i < 2 || i === 5 ? 'rgba(237,187,0,0.85)' : 'rgba(150,150,200,0.85)'}>
+          {l.label}
+        </text>
+      ))}
+
+      {/* Data fill */}
+      <path d={dataPath} fill="rgba(0,77,152,0.28)" stroke="#004D98" strokeWidth="1.75" strokeLinejoin="round" />
+
+      {/* Data points */}
+      {dataPts.map(([x, y], i) => (
+        <circle key={i} cx={x.toFixed(1)} cy={y.toFixed(1)} r="2.5"
+          fill="#004D98" stroke="rgba(255,255,255,0.6)" strokeWidth="0.75" />
+      ))}
+    </svg>
   )
 }
