@@ -181,52 +181,70 @@ async function savePrediction(matchId, player, h, a) {
 }
 
 // ─── ESPN: player stats ───────────────────────────────────────────────────────
-const PLAYER_SEASON_LABELS = { '2025': '2024/25', '2024': '2023/24', '2023': '2022/23' }
+// ESPN season year = start year of the season (2025 → 2025/26, 2024 → 2024/25)
+const PLAYER_SEASON_LABELS = { '2025': '2025/26', '2024': '2024/25', '2023': '2023/24' }
 
 async function fetchPlayerStats(seasonYear = '2025') {
   try {
-    const rRes = await fetch(
-      `https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/teams/${BARCA_ID}/roster`
+    // 1. Get La Liga schedule to find all completed match IDs for the season
+    const schedRes = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/teams/${BARCA_ID}/schedule?season=${seasonYear}`
     )
-    if (!rRes.ok) return []
-    const rData = await rRes.json()
-    const athletes = rData.athletes ?? []
+    if (!schedRes.ok) return []
+    const schedData = await schedRes.json()
+    const matchIds = (schedData.events ?? [])
+      .filter(e => e.competitions?.[0]?.status?.type?.completed)
+      .map(e => e.id)
 
-    const players = await Promise.all(
-      athletes.map(async ath => {
-        try {
-          const r = await fetch(
-            `https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/athletes/${ath.id}/statistics?season=${seasonYear}`
-          )
-          if (!r.ok) return null
-          const data = await r.json()
-          const statsMap = {}
-          const groups = data.splits?.categories ?? data.statistics ?? []
-          groups.forEach(g => {
-            ;(g.stats ?? []).forEach(s => { statsMap[s.name] = s.value ?? 0 })
-          })
-          const appearances = statsMap.gamesPlayed ?? statsMap.appearances ?? 0
-          if (appearances === 0) return null
-          return {
-            id:          ath.id,
-            name:        ath.fullName ?? ath.displayName ?? '',
-            shortName:   ath.shortName ?? ath.displayName ?? '',
-            jersey:      ath.jersey ?? '',
-            position:    ath.position?.abbreviation ?? '?',
-            photo:       `https://a.espncdn.com/i/headshots/soccer/players/full/${ath.id}.png`,
-            goals:       statsMap.goals ?? 0,
-            assists:     statsMap.assists ?? 0,
-            appearances,
-            yellowCards: statsMap.yellowCards ?? 0,
-            redCards:    statsMap.redCards ?? 0,
-            cleanSheets: statsMap.cleanSheets ?? 0,
-            saves:       statsMap.saves ?? 0,
-          }
-        } catch { return null }
-      })
+    if (matchIds.length === 0) return []
+
+    // 2. Fetch all match summaries in parallel — each contains per-match player stats
+    const summaries = await Promise.all(
+      matchIds.map(id =>
+        fetch(`https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/summary?event=${id}`)
+          .then(r => r.ok ? r.json() : null)
+          .catch(() => null)
+      )
     )
-    return players
-      .filter(Boolean)
+
+    // 3. Aggregate per-player stats across all matches
+    const playerMap = {}
+    summaries.filter(Boolean).forEach(summary => {
+      const barcaRoster = (summary.rosters ?? []).find(r => r.team?.id === BARCA_ID)
+      if (!barcaRoster) return
+
+      ;(barcaRoster.roster ?? []).forEach(entry => {
+        const ath = entry.athlete
+        if (!ath) return
+        const s = {}
+        ;(entry.stats ?? []).forEach(stat => { s[stat.name] = stat.value ?? 0 })
+
+        const id = ath.id
+        if (!playerMap[id]) {
+          playerMap[id] = {
+            id,
+            name:         ath.fullName ?? ath.displayName ?? '',
+            shortName:    ath.shortName ?? ath.displayName ?? '',
+            jersey:       entry.jersey ?? ath.jersey ?? '',
+            position:     entry.position?.abbreviation ?? ath.position?.abbreviation ?? '?',
+            photo:        `https://a.espncdn.com/i/headshots/soccer/players/full/${id}.png`,
+            goals: 0, assists: 0, appearances: 0,
+            yellowCards: 0, redCards: 0, saves: 0, goalsConceded: 0,
+          }
+        }
+        const p = playerMap[id]
+        p.goals         += s.totalGoals    ?? 0
+        p.assists       += s.goalAssists   ?? 0
+        p.appearances   += s.appearances   ?? 0
+        p.yellowCards   += s.yellowCards   ?? 0
+        p.redCards      += s.redCards      ?? 0
+        p.saves         += s.saves         ?? 0
+        p.goalsConceded += s.goalsConceded ?? 0
+      })
+    })
+
+    return Object.values(playerMap)
+      .filter(p => p.appearances > 0)
       .sort((a, b) => b.goals - a.goals || b.assists - a.assists || b.appearances - a.appearances)
   } catch { return [] }
 }
@@ -1006,9 +1024,9 @@ function PlayerCard({ player: p }) {
       <div className="plc-stats">
         {isGK
           ? <>
-              <PlcStat val={p.appearances} label="Partits" />
-              {p.cleanSheets > 0 && <PlcStat val={p.cleanSheets} label="P.imbat." />}
-              {p.saves > 0      && <PlcStat val={p.saves}       label="Aturades" />}
+              <PlcStat val={p.appearances}   label="Partits" />
+              {p.saves > 0         && <PlcStat val={p.saves}         label="Aturades" />}
+              {p.goalsConceded > 0 && <PlcStat val={p.goalsConceded} label="Gols rebuts" />}
             </>
           : <>
               <PlcStat val={p.goals}       label="Gols" highlight={p.goals > 0} />
