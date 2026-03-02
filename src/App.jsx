@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const BARCA_ID   = '83'
@@ -44,6 +44,14 @@ function timeLeft(matchDate) {
   if (days === 1) return `${hours > 0 ? `1d ${hours}h` : '1 dia'}`
   if (hours > 0)  return `${hours}h ${mins}m`
   return `${mins}m`
+}
+
+// ─── Season helper ────────────────────────────────────────────────────────────
+function getMatchSeason(date) {
+  const y = date.getFullYear()
+  const m = date.getMonth()           // 0 = Jan, 7 = Aug
+  const startYear = m >= 7 ? y : y - 1
+  return `${startYear}/${String(startYear + 1).slice(2)}`
 }
 
 // ─── ESPN: upcoming matches ───────────────────────────────────────────────────
@@ -131,6 +139,7 @@ async function fetchCompleted() {
             barcaGoals:    Math.round(barca.score?.value    ?? -1),
             opponentGoals: Math.round(opponent.score?.value ?? -1),
             result,
+            season:      getMatchSeason(date),
             league:      l.name,
             leagueAbbr:  l.abbr,
             leagueColor: l.color,
@@ -171,6 +180,57 @@ async function savePrediction(matchId, player, h, a) {
   } catch { /* fire & forget */ }
 }
 
+// ─── ESPN: player stats ───────────────────────────────────────────────────────
+const PLAYER_SEASON_LABELS = { '2025': '2024/25', '2024': '2023/24', '2023': '2022/23' }
+
+async function fetchPlayerStats(seasonYear = '2025') {
+  try {
+    const rRes = await fetch(
+      `https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/teams/${BARCA_ID}/roster`
+    )
+    if (!rRes.ok) return []
+    const rData = await rRes.json()
+    const athletes = rData.athletes ?? []
+
+    const players = await Promise.all(
+      athletes.map(async ath => {
+        try {
+          const r = await fetch(
+            `https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/athletes/${ath.id}/statistics?season=${seasonYear}`
+          )
+          if (!r.ok) return null
+          const data = await r.json()
+          const statsMap = {}
+          const groups = data.splits?.categories ?? data.statistics ?? []
+          groups.forEach(g => {
+            ;(g.stats ?? []).forEach(s => { statsMap[s.name] = s.value ?? 0 })
+          })
+          const appearances = statsMap.gamesPlayed ?? statsMap.appearances ?? 0
+          if (appearances === 0) return null
+          return {
+            id:          ath.id,
+            name:        ath.fullName ?? ath.displayName ?? '',
+            shortName:   ath.shortName ?? ath.displayName ?? '',
+            jersey:      ath.jersey ?? '',
+            position:    ath.position?.abbreviation ?? '?',
+            photo:       `https://a.espncdn.com/i/headshots/soccer/players/full/${ath.id}.png`,
+            goals:       statsMap.goals ?? 0,
+            assists:     statsMap.assists ?? 0,
+            appearances,
+            yellowCards: statsMap.yellowCards ?? 0,
+            redCards:    statsMap.redCards ?? 0,
+            cleanSheets: statsMap.cleanSheets ?? 0,
+            saves:       statsMap.saves ?? 0,
+          }
+        } catch { return null }
+      })
+    )
+    return players
+      .filter(Boolean)
+      .sort((a, b) => b.goals - a.goals || b.assists - a.assists || b.appearances - a.appearances)
+  } catch { return [] }
+}
+
 // ─── Root App ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [player, setPlayer] = useState(() => localStorage.getItem('barca_player'))
@@ -187,7 +247,13 @@ export default function App() {
   const [predA,    setPredA   ] = useState('')
   const [saving,   setSaving  ] = useState(false)
   const [savedMsg, setSavedMsg] = useState('')
-  const [filterRes,setFilterRes] = useState('all')
+  const [filterRes,    setFilterRes    ] = useState('all')
+  const [filterSeason, setFilterSeason ] = useState('all')
+
+  const [playerSeason,    setPlayerSeason   ] = useState('2025')
+  const [playerStats,     setPlayerStats    ] = useState([])
+  const [loadingPlayers,  setLoadingPlayers ] = useState(false)
+  const playersFetchedRef = useRef(new Set())
 
   // Live clock — updates every 30 s so the lock engages at kickoff
   const [now, setNow] = useState(() => new Date())
@@ -201,6 +267,18 @@ export default function App() {
     fetchCompleted().then(c => { setCompleted(c); setLoadingComp(false) })
     fetchPredictions().then(p => { setPredictions(p); setLoadingPreds(false) })
   }, [])
+
+  // Fetch player stats lazily when the Players tab is first visited (per season)
+  useEffect(() => {
+    if (tab !== 'players') return
+    if (playersFetchedRef.current.has(playerSeason)) return
+    setLoadingPlayers(true)
+    fetchPlayerStats(playerSeason).then(stats => {
+      setPlayerStats(stats)
+      setLoadingPlayers(false)
+      playersFetchedRef.current.add(playerSeason)
+    })
+  }, [tab, playerSeason])
 
   const nextMatch     = upcoming[0] ?? null
   const futureMatches = upcoming.slice(1, 6)
@@ -271,9 +349,17 @@ export default function App() {
     setTimeout(() => setSavedMsg(''), 3000)
   }
 
-  const filteredCompleted = filterRes === 'all'
-    ? completed
-    : completed.filter(m => m.result === filterRes)
+  const seasons = useMemo(() =>
+    Array.from(new Set(completed.map(m => m.season))).filter(Boolean).sort().reverse(),
+    [completed]
+  )
+
+  const filteredCompleted = useMemo(() => {
+    let list = completed
+    if (filterSeason !== 'all') list = list.filter(m => m.season === filterSeason)
+    if (filterRes    !== 'all') list = list.filter(m => m.result === filterRes)
+    return list
+  }, [completed, filterSeason, filterRes])
 
   return (
     <div className="app">
@@ -311,6 +397,9 @@ export default function App() {
                   filtered={filteredCompleted}
                   filterRes={filterRes}
                   onFilter={setFilterRes}
+                  filterSeason={filterSeason}
+                  onFilterSeason={setFilterSeason}
+                  seasons={seasons}
                   loadingComp={loadingComp}
                   loadingPreds={loadingPreds}
                 />
@@ -321,6 +410,19 @@ export default function App() {
                   scoredMatches={scoredMatches}
                   standings={standings}
                   loading={loadingComp || loadingPreds}
+                />
+              )}
+
+              {tab === 'players' && (
+                <PlayersTab
+                  stats={playerStats}
+                  loading={loadingPlayers}
+                  season={playerSeason}
+                  onSeason={s => {
+                    if (s === playerSeason) return
+                    setPlayerSeason(s)
+                    setPlayerStats([])
+                  }}
                 />
               )}
 
@@ -379,6 +481,7 @@ function Nav({ tab, onTab }) {
         { id: 'predict',   label: '🔮 Pronostica'    },
         { id: 'results',   label: '📊 Resultats'    },
         { id: 'standings', label: '🏆 Classificació' },
+        { id: 'players',   label: '👥 Jugadors'      },
       ].map(t => (
         <button key={t.id} className={tab === t.id ? 'nav-btn active' : 'nav-btn'} onClick={() => onTab(t.id)}>
           {t.label}
@@ -540,12 +643,15 @@ function MiniStandings({ standings }) {
 }
 
 // ─── Results tab ──────────────────────────────────────────────────────────────
-function ResultsTab({ scoredMatches, completed, filtered, filterRes, onFilter, loadingComp, loadingPreds }) {
+function ResultsTab({ scoredMatches, completed, filtered, filterRes, onFilter, filterSeason, onFilterSeason, seasons, loadingComp, loadingPreds }) {
   const loading = loadingComp || loadingPreds
-  const w  = completed.filter(m => m.result === 'W').length
-  const d  = completed.filter(m => m.result === 'D').length
-  const l  = completed.filter(m => m.result === 'L').length
-  const wr = completed.length > 0 ? Math.round(w / completed.length * 100) : 0
+
+  // Stats computed from the season-filtered subset (or all if no season selected)
+  const base = filterSeason === 'all' ? completed : completed.filter(m => m.season === filterSeason)
+  const w  = base.filter(m => m.result === 'W').length
+  const d  = base.filter(m => m.result === 'D').length
+  const l  = base.filter(m => m.result === 'L').length
+  const wr = base.length > 0 ? Math.round(w / base.length * 100) : 0
 
   return (
     <div>
@@ -563,15 +669,28 @@ function ResultsTab({ scoredMatches, completed, filtered, filterRes, onFilter, l
       <section>
         <h2 className="section-title">📋 Historial · Últims 2 anys</h2>
 
+        {/* Season filter */}
+        {!loading && seasons.length > 1 && (
+          <div className="filter-bar">
+            {[{ val: 'all', label: 'Totes' }, ...seasons.map(s => ({ val: s, label: s }))].map(o => (
+              <button key={o.val}
+                className={filterSeason === o.val ? 'pill active' : 'pill'}
+                style={filterSeason === o.val ? { background: 'var(--barca-blue)', borderColor: 'var(--barca-blue)' } : {}}
+                onClick={() => onFilterSeason(o.val)}
+              >{o.label}</button>
+            ))}
+          </div>
+        )}
+
         {/* Stats */}
         {!loading && (
           <div className="stats-bar">
             {[
-              { label: 'Jugats',     val: completed.length, color: 'var(--text)' },
-              { label: 'Guanyats',  val: w,                color: '#27ae60' },
-              { label: 'Empats',    val: d,                color: '#f39c12' },
-              { label: 'Perduts',   val: l,                color: '#e74c3c' },
-              { label: '% Victòries', val: `${wr}%`,       color: '#27ae60' },
+              { label: 'Jugats',      val: base.length, color: 'var(--text)' },
+              { label: 'Guanyats',   val: w,            color: '#27ae60' },
+              { label: 'Empats',     val: d,            color: '#f39c12' },
+              { label: 'Perduts',    val: l,            color: '#e74c3c' },
+              { label: '% Victòries', val: `${wr}%`,   color: '#27ae60' },
             ].map(s => (
               <div key={s.label} className="stat-pill" style={{ borderTopColor: s.color }}>
                 <span className="sp-val" style={{ color: s.color }}>{s.val}</span>
@@ -581,7 +700,7 @@ function ResultsTab({ scoredMatches, completed, filtered, filterRes, onFilter, l
           </div>
         )}
 
-        {/* Filter */}
+        {/* Result filter */}
         {!loading && (
           <div className="filter-bar">
             {[
@@ -829,6 +948,93 @@ function SetupBanner() {
     <div className="setup-banner">
       <strong>⚙️ Connecta Google Sheets per desar els pronòstics</strong>
       <p>Afegeix la URL del teu Apps Script a <code>.env.local</code> com a <code>VITE_SCRIPT_URL</code>.</p>
+    </div>
+  )
+}
+
+// ─── Players tab ───────────────────────────────────────────────────────────────
+function PlayersTab({ stats, loading, season, onSeason }) {
+  const POS_ORDER = { GK: 0, G: 0, D: 1, M: 2, F: 3, FW: 3 }
+  const sorted = [...stats].sort((a, b) => {
+    const pa = POS_ORDER[a.position] ?? 4
+    const pb = POS_ORDER[b.position] ?? 4
+    if (pa !== pb) return pa - pb
+    return b.goals - a.goals || b.assists - a.assists
+  })
+
+  return (
+    <div>
+      {/* Season selector */}
+      <div className="filter-bar" style={{ marginBottom: '1.5rem' }}>
+        {Object.entries(PLAYER_SEASON_LABELS).map(([year, label]) => (
+          <button key={year}
+            className={season === year ? 'pill active' : 'pill'}
+            style={season === year ? { background: 'var(--barca-blue)', borderColor: 'var(--barca-blue)' } : {}}
+            onClick={() => onSeason(year)}
+          >{label} · La Liga</button>
+        ))}
+      </div>
+
+      {loading
+        ? <Spinner label="Carregant estadístiques dels jugadors…" />
+        : stats.length === 0
+        ? <EmptyCard icon="📊" text="No s'han trobat estadístiques per a aquesta temporada." />
+        : (
+          <div className="players-grid">
+            {sorted.map(p => <PlayerCard key={p.id} player={p} />)}
+          </div>
+        )
+      }
+    </div>
+  )
+}
+
+const POS_COLOR = { GK: '#f39c12', G: '#f39c12', D: '#3498db', M: '#27ae60', F: '#e74c3c', FW: '#e74c3c' }
+
+function PlayerCard({ player: p }) {
+  const posColor = POS_COLOR[p.position] ?? POS_COLOR[p.position?.[0]] ?? 'var(--muted)'
+  const isGK = ['GK', 'G'].includes(p.position)
+  return (
+    <div className="player-card">
+      <div className="plc-photo-wrap">
+        <img src={p.photo} alt={p.shortName} className="plc-photo"
+          onError={e => { e.target.style.display = 'none' }} />
+        <span className="plc-jersey">#{p.jersey}</span>
+        <span className="plc-pos" style={{ background: posColor }}>{p.position}</span>
+      </div>
+      <div className="plc-name">{p.shortName || p.name}</div>
+      <div className="plc-stats">
+        {isGK
+          ? <>
+              <PlcStat val={p.appearances} label="Partits" />
+              {p.cleanSheets > 0 && <PlcStat val={p.cleanSheets} label="P.imbat." />}
+              {p.saves > 0      && <PlcStat val={p.saves}       label="Aturades" />}
+            </>
+          : <>
+              <PlcStat val={p.goals}       label="Gols" highlight={p.goals > 0} />
+              <PlcStat val={p.assists}     label="Assist." />
+              <PlcStat val={p.appearances} label="Partits" />
+            </>
+        }
+        {(p.yellowCards > 0 || p.redCards > 0) && (
+          <div className="plc-stat">
+            <span className="plc-val plc-cards">
+              {p.yellowCards > 0 && <span className="card-y">{p.yellowCards}</span>}
+              {p.redCards    > 0 && <span className="card-r">{p.redCards}</span>}
+            </span>
+            <span className="plc-label">Targes</span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function PlcStat({ val, label, highlight }) {
+  return (
+    <div className="plc-stat">
+      <span className={`plc-val${highlight ? ' plc-goals' : ''}`}>{val}</span>
+      <span className="plc-label">{label}</span>
     </div>
   )
 }
