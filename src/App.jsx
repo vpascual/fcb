@@ -26,10 +26,10 @@ function calcPoints(barcaGoals, oppGoals, predH, predA) {
 }
 
 const PT = {
-  5: { icon: '🎯', cls: 'pts-5', text: 'Exact score!'      },
-  3: { icon: '⭐', cls: 'pts-3', text: 'Correct diff'      },
-  1: { icon: '✓',  cls: 'pts-1', text: 'Correct result'    },
-  0: { icon: '✗',  cls: 'pts-0', text: 'Wrong'             },
+  5: { icon: '🎯', cls: 'pts-5', text: 'Resultat exacte!'    },
+  3: { icon: '⭐', cls: 'pts-3', text: 'Diferència correcta' },
+  1: { icon: '✓',  cls: 'pts-1', text: 'Resultat correcte'  },
+  0: { icon: '✗',  cls: 'pts-0', text: 'Incorrecte'         },
 }
 
 // ─── ESPN: upcoming matches ───────────────────────────────────────────────────
@@ -66,8 +66,8 @@ async function fetchUpcoming() {
           return [{
             id:           event.id,
             date,
-            dateStr:      date.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }),
-            timeStr:      date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }) + ' CET',
+            dateStr:      date.toLocaleDateString('ca', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }),
+            timeStr:      date.toLocaleTimeString('ca', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Madrid' }) + ' CET',
             opponent:     opponent.team?.displayName ?? 'Unknown',
             opponentLogo: opponent.team?.logos?.[0]?.href ?? null,
             isHome:       barca.homeAway === 'home',
@@ -110,7 +110,7 @@ async function fetchCompleted() {
           return [{
             id:            event.id,
             date,
-            dateStr:       date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+            dateStr:       date.toLocaleDateString('ca', { day: '2-digit', month: 'short', year: 'numeric' }),
             opponent:      opponent.team?.displayName ?? 'Unknown',
             opponentLogo:  opponent.team?.logos?.[0]?.href ?? null,
             isHome:        barca.homeAway === 'home',
@@ -243,7 +243,7 @@ export default function App() {
       }
     }))
     setSaving(false)
-    setSavedMsg('Saved ✓')
+    setSavedMsg('Desat ✓')
     setTimeout(() => setSavedMsg(''), 3000)
   }
 
@@ -316,7 +316,7 @@ function Header({ player, standings, onSwitch }) {
         <img src="https://a.espncdn.com/i/teamlogos/soccer/500/83.png" alt="FCB" className="crest"
           onError={e => { e.target.style.display = 'none' }} />
         <div className="header-text">
-          <h1>FCB Predictions</h1>
+          <h1>Pronòstics FCB</h1>
           <p>Victor 👨 vs Max 👦 · 2025/26</p>
         </div>
         {p && (
@@ -334,7 +334,7 @@ function Header({ player, standings, onSwitch }) {
 function PlayerGate({ onSelect }) {
   return (
     <div className="player-gate">
-      <p className="gate-label">Who's playing?</p>
+      <p className="gate-label">Qui juga?</p>
       <div className="gate-buttons">
         {[{ id: 'victor', emoji: '👨', label: 'Victor' }, { id: 'max', emoji: '👦', label: 'Max' }].map(p => (
           <button key={p.id} className="gate-btn" onClick={() => onSelect(p.id)}>
@@ -352,9 +352,9 @@ function Nav({ tab, onTab }) {
   return (
     <nav className="nav">
       {[
-        { id: 'predict',   label: '🔮 Predict'   },
-        { id: 'results',   label: '📊 Results'   },
-        { id: 'standings', label: '🏆 Standings' },
+        { id: 'predict',   label: '🔮 Pronostica'    },
+        { id: 'results',   label: '📊 Resultats'    },
+        { id: 'standings', label: '🏆 Classificació' },
       ].map(t => (
         <button key={t.id} className={tab === t.id ? 'nav-btn active' : 'nav-btn'} onClick={() => onTab(t.id)}>
           {t.label}
@@ -377,9 +377,9 @@ function PredictTab({
       {!scriptConfigured && <SetupBanner />}
 
       {loadingUp
-        ? <Spinner label="Finding next match…" />
+        ? <Spinner label="Cercant el proper partit…" />
         : !nextMatch
-        ? <EmptyCard icon="⏳" text="No upcoming match found in the next 90 days." />
+        ? <EmptyCard icon="⏳" text="No s'ha trobat cap partit en els propers 90 dies." />
         : <PredictCard
             match={nextMatch}
             player={player} oppId={oppId}
@@ -393,7 +393,7 @@ function PredictTab({
       {/* Upcoming fixtures */}
       {!loadingUp && futureMatches.length > 0 && (
         <section style={{ marginTop: '2rem' }}>
-          <h2 className="section-title">Coming up next</h2>
+          <h2 className="section-title">Pròxims partits</h2>
           <div className="upcoming-list">
             {futureMatches.map(m => <UpcomingRow key={m.id} match={m} />)}
           </div>
@@ -423,7 +423,7 @@ function PredictCard({ match, player, oppId, predH, predA, onH, onA, onSave, sav
       <div className="pc-header">
         <span className="pc-league" style={{ background: match.leagueColor }}>{match.league}</span>
         <span className="pc-date">{match.dateStr} · {match.timeStr}</span>
-        {isLocked && <span className="locked-badge">🔒 Locked</span>}
+        {isLocked && <span className="locked-badge">🔒 Tancat</span>}
       </div>
 
       {/* Teams */}
@@ -442,11 +442,11 @@ function PredictCard({ match, player, oppId, predH, predA, onH, onA, onSave, sav
           )}
         </div>
       </div>
-      <p className="pc-venue-note">{match.isHome ? '🏟️ Camp Nou — Home match' : `✈️ Away at ${match.opponent}`}</p>
+      <p className="pc-venue-note">{match.isHome ? '🏟️ Camp Nou — Partit a casa' : `✈️ Fora, contra el ${match.opponent}`}</p>
 
       {/* Your prediction */}
       <div className="pc-pred-section">
-        <div className="pc-pred-label">{playerLabel[player]}'s prediction</div>
+        <div className="pc-pred-label">Pronòstic de {playerLabel[player]}</div>
         <div className="pc-inputs-row">
           <input type="number" min="0" max="20" className="score-input" placeholder="–"
             value={predH} onChange={e => onH(e.target.value)} disabled={isLocked} />
@@ -457,7 +457,7 @@ function PredictCard({ match, player, oppId, predH, predA, onH, onA, onSave, sav
           {!isLocked && (
             <button className="save-btn" onClick={onSave}
               disabled={saving || predH === '' || predA === ''}>
-              {saving ? '…' : myPredStored ? 'Update' : 'Save'}
+              {saving ? '…' : myPredStored ? 'Actualitza' : 'Desa'}
             </button>
           )}
         </div>
@@ -466,12 +466,12 @@ function PredictCard({ match, player, oppId, predH, predA, onH, onA, onSave, sav
 
       {/* Other player's prediction (revealed after you submit) */}
       <div className="pc-opp-pred">
-        <div className="pc-pred-label">{oppLabel[oppId]}'s prediction</div>
+        <div className="pc-pred-label">Pronòstic de {oppLabel[oppId]}</div>
         {myPredStored
           ? oppPred
             ? <div className="opp-revealed">{oppPred.h} – {oppPred.a}</div>
-            : <div className="opp-pending">Not submitted yet</div>
-          : <div className="opp-hidden">🙈 Submit yours to see theirs</div>
+            : <div className="opp-pending">Encara no enviat</div>
+          : <div className="opp-hidden">🙈 Envia el teu per veure el seu</div>
         }
       </div>
     </div>
@@ -491,12 +491,12 @@ function UpcomingRow({ match }) {
 function MiniStandings({ standings }) {
   const total = standings.victor + standings.max
   const vPct  = total > 0 ? (standings.victor / total) * 100 : 50
-  const leader = standings.victor > standings.max ? '👨 Victor leading'
-               : standings.max > standings.victor ? '👦 Max leading'
-               : 'Tied!'
+  const leader = standings.victor > standings.max ? '👨 Victor guanya'
+               : standings.max > standings.victor ? '👦 Max guanya'
+               : 'Empatats!'
   return (
     <div className="mini-standings">
-      <div className="ms-title">Standings · {leader}</div>
+      <div className="ms-title">Classificació · {leader}</div>
       {[
         { label: '👨 Victor', pts: standings.victor, pct: vPct,       color: 'var(--barca-blue)' },
         { label: '👦 Max',    pts: standings.max,    pct: 100 - vPct, color: 'var(--barca-red)' },
@@ -524,7 +524,7 @@ function ResultsTab({ scoredMatches, completed, filtered, filterRes, onFilter, l
       {/* Prediction game results section */}
       {!loading && scoredMatches.length > 0 && (
         <section style={{ marginBottom: '2.5rem' }}>
-          <h2 className="section-title">🎯 Prediction Results</h2>
+          <h2 className="section-title">🎯 Resultats dels pronòstics</h2>
           <div className="matches-list">
             {scoredMatches.map(m => <ScoredMatchCard key={m.id} match={m} />)}
           </div>
@@ -533,17 +533,17 @@ function ResultsTab({ scoredMatches, completed, filtered, filterRes, onFilter, l
 
       {/* ESPN history */}
       <section>
-        <h2 className="section-title">📋 Match History · Last 2 Years</h2>
+        <h2 className="section-title">📋 Historial · Últims 2 anys</h2>
 
         {/* Stats */}
         {!loading && (
           <div className="stats-bar">
             {[
-              { label: 'Played', val: completed.length, color: 'var(--text)' },
-              { label: 'Won',    val: w,                color: '#27ae60' },
-              { label: 'Drawn',  val: d,                color: '#f39c12' },
-              { label: 'Lost',   val: l,                color: '#e74c3c' },
-              { label: 'Win %',  val: `${wr}%`,         color: '#27ae60' },
+              { label: 'Jugats',     val: completed.length, color: 'var(--text)' },
+              { label: 'Guanyats',  val: w,                color: '#27ae60' },
+              { label: 'Empats',    val: d,                color: '#f39c12' },
+              { label: 'Perduts',   val: l,                color: '#e74c3c' },
+              { label: '% Victòries', val: `${wr}%`,       color: '#27ae60' },
             ].map(s => (
               <div key={s.label} className="stat-pill" style={{ borderTopColor: s.color }}>
                 <span className="sp-val" style={{ color: s.color }}>{s.val}</span>
@@ -557,10 +557,10 @@ function ResultsTab({ scoredMatches, completed, filtered, filterRes, onFilter, l
         {!loading && (
           <div className="filter-bar">
             {[
-              { val: 'all', label: 'All',  color: 'var(--barca-blue)' },
-              { val: 'W',   label: 'Won',  color: '#27ae60' },
-              { val: 'D',   label: 'Draw', color: '#f39c12' },
-              { val: 'L',   label: 'Lost', color: '#e74c3c' },
+              { val: 'all', label: 'Tots',      color: 'var(--barca-blue)' },
+              { val: 'W',   label: 'Victòries', color: '#27ae60' },
+              { val: 'D',   label: 'Empats',    color: '#f39c12' },
+              { val: 'L',   label: 'Derrotes',  color: '#e74c3c' },
             ].map(o => (
               <button key={o.val}
                 className={filterRes === o.val ? 'pill active' : 'pill'}
@@ -572,10 +572,10 @@ function ResultsTab({ scoredMatches, completed, filtered, filterRes, onFilter, l
         )}
 
         {loading
-          ? <Spinner label="Loading match history…" />
+          ? <Spinner label="Carregant historial de partits…" />
           : <>
               <p className="matches-count">
-                Showing <strong>{filtered.length}</strong> of {completed.length} matches
+                Mostrant <strong>{filtered.length}</strong> de {completed.length} partits
               </p>
               <div className="matches-list">
                 {filtered.map(m => <HistoryCard key={m.id} match={m} />)}
@@ -590,7 +590,7 @@ function ResultsTab({ scoredMatches, completed, filtered, filterRes, onFilter, l
 function ScoredMatchCard({ match }) {
   const { barcaGoals: bh, opponentGoals: bo, pred, victorPts: vp, maxPts: mp } = match
   const resultColor = bh > bo ? '#27ae60' : bh === bo ? '#f39c12' : '#e74c3c'
-  const resultChar  = bh > bo ? 'W' : bh === bo ? 'D' : 'L'
+  const resultChar  = bh > bo ? 'V' : bh === bo ? 'E' : 'D'
 
   return (
     <div className="scored-card" style={{ borderLeftColor: resultColor }}>
@@ -621,7 +621,7 @@ function PredResultRow({ label, h, a, pts }) {
       <span className="pred-score">{hasPred ? `${h}–${a}` : '—'}</span>
       {ptInfo
         ? <span className={`pred-pts ${ptInfo.cls}`}>{ptInfo.icon} {pts}pt{pts !== 1 ? 's' : ''}</span>
-        : <span className="pred-pts muted">no bet</span>
+        : <span className="pred-pts muted">sense pronòstic</span>
       }
     </div>
   )
@@ -635,7 +635,7 @@ function HistoryCard({ match }) {
       <div className="mc-meta">
         <span className="mc-date">{match.dateStr}</span>
         <span className="mc-league" style={{ background: match.leagueColor }}>{match.leagueAbbr}</span>
-        <span className="mc-venue">{match.isHome ? 'H' : 'A'}</span>
+        <span className="mc-venue">{match.isHome ? 'Casa' : 'Fora'}</span>
       </div>
       <div className="mc-body">
         <div className="mc-team">
@@ -649,7 +649,7 @@ function HistoryCard({ match }) {
             <span className="mc-dash">–</span>
             <span>{match.opponentGoals >= 0 ? match.opponentGoals : '?'}</span>
           </div>
-          <div className="mc-result-badge">{match.result}</div>
+          <div className="mc-result-badge">{{ W: 'V', D: 'E', L: 'D' }[match.result]}</div>
         </div>
         <div className="mc-team mc-opponent">
           <span className="mc-name">{match.opponent}</span>
@@ -665,13 +665,13 @@ function HistoryCard({ match }) {
 
 // ─── Standings tab ────────────────────────────────────────────────────────────
 function StandingsTab({ scoredMatches, standings, loading }) {
-  if (loading) return <Spinner label="Loading standings…" />
+  if (loading) return <Spinner label="Carregant classificació…" />
 
   if (scoredMatches.length === 0) return (
     <div>
-      <EmptyCard icon="🏆" text="No scored matches yet.">
+      <EmptyCard icon="🏆" text="Encara no hi ha partits puntuats.">
         <p className="muted" style={{ marginTop: '0.5rem' }}>
-          Once you both submit predictions and a match is played,<br />points will appear here automatically.
+          Un cop envieu els pronòstics i es jugui un partit,<br />els punts apareixeran aquí automàticament.
         </p>
       </EmptyCard>
       <ScoringGuide />
@@ -691,11 +691,11 @@ function StandingsTab({ scoredMatches, standings, loading }) {
 
       <ScoringGuide />
 
-      <h2 className="section-title" style={{ marginTop: '2rem' }}>Match breakdown</h2>
+      <h2 className="section-title" style={{ marginTop: '2rem' }}>Resum per partits</h2>
       <div className="breakdown">
         <div className="bd-header">
-          <span>Match</span>
-          <span>Score</span>
+          <span>Partit</span>
+          <span>Resultat</span>
           <span>👨 Victor</span>
           <span>👦 Max</span>
         </div>
@@ -715,13 +715,13 @@ function StandingsTab({ scoredMatches, standings, loading }) {
                 {vp != null ? `${PT[vp].icon} ${vp}` : '—'}
                 {pred.victorHome !== '' && pred.victorHome != null
                   ? <span className="bd-pred">({pred.victorHome}–{pred.victorAway})</span>
-                  : <span className="bd-pred muted">no bet</span>}
+                  : <span className="bd-pred muted">sense pronòstic</span>}
               </span>
               <span className={`bd-pts ${mp != null ? PT[mp].cls : ''}`}>
                 {mp != null ? `${PT[mp].icon} ${mp}` : '—'}
                 {pred.maxHome !== '' && pred.maxHome != null
                   ? <span className="bd-pred">({pred.maxHome}–{pred.maxAway})</span>
-                  : <span className="bd-pred muted">no bet</span>}
+                  : <span className="bd-pred muted">sense pronòstic</span>}
               </span>
             </div>
           )
@@ -732,6 +732,7 @@ function StandingsTab({ scoredMatches, standings, loading }) {
           <span className="bd-pts"><strong>{standings.victor} pts</strong></span>
           <span className="bd-pts"><strong>{standings.max} pts</strong></span>
         </div>
+
       </div>
     </div>
   )
@@ -740,7 +741,7 @@ function StandingsTab({ scoredMatches, standings, loading }) {
 function BigPlayerCard({ emoji, label, pts, leading }) {
   return (
     <div className={`bpc ${leading ? 'bpc-leading' : ''}`}>
-      {leading && <div className="bpc-crown">👑 Leading</div>}
+      {leading && <div className="bpc-crown">👑 Guanyant</div>}
       <div className="bpc-emoji">{emoji}</div>
       <div className="bpc-name">{label}</div>
       <div className="bpc-pts">{pts}<span className="bpc-label">pts</span></div>
@@ -751,14 +752,14 @@ function BigPlayerCard({ emoji, label, pts, leading }) {
 // ─── Scoring guide ────────────────────────────────────────────────────────────
 function ScoringGuide() {
   const rules = [
-    { icon: '🎯', cls: 'pts-5', pts: '5 points', desc: 'Exact score — both goals spot on', example: 'e.g. predict 2–1, actual 2–1' },
-    { icon: '⭐', cls: 'pts-3', pts: '3 points', desc: 'Right result & goal difference',    example: 'e.g. predict 3–1, actual 4–2 (both wins by 2)' },
-    { icon: '✓',  cls: 'pts-1', pts: '1 point',  desc: 'Right result only (W / D / L)',     example: 'e.g. predict 1–0, actual 3–1' },
-    { icon: '✗',  cls: 'pts-0', pts: '0 points', desc: 'Wrong result',                      example: 'e.g. predict a win, Barcelona loses' },
+    { icon: '🎯', cls: 'pts-5', pts: '5 punts', desc: 'Resultat exacte — tots dos gols encertats',         example: 'ex. pronòstic 2–1, resultat 2–1' },
+    { icon: '⭐', cls: 'pts-3', pts: '3 punts', desc: 'Resultat correcte i diferència de gols exacta',     example: 'ex. pronòstic 3–1, resultat 4–2 (totes dues victòries per 2)' },
+    { icon: '✓',  cls: 'pts-1', pts: '1 punt',  desc: 'Resultat correcte (victòria / empat / derrota)',    example: 'ex. pronòstic 1–0, resultat 3–1' },
+    { icon: '✗',  cls: 'pts-0', pts: '0 punts', desc: 'Resultat incorrecte',                               example: 'ex. pronòstic victòria, el Barça perd' },
   ]
   return (
     <div className="scoring-guide">
-      <h2 className="scoring-guide-title">How points are awarded</h2>
+      <h2 className="scoring-guide-title">Com s'atorguen els punts</h2>
       <div className="scoring-rules">
         {rules.map(r => (
           <div key={r.pts} className="scoring-rule">
@@ -798,8 +799,8 @@ function EmptyCard({ icon, text, children }) {
 function SetupBanner() {
   return (
     <div className="setup-banner">
-      <strong>⚙️ Connect Google Sheets to save predictions</strong>
-      <p>Add your Apps Script URL to <code>.env.local</code> as <code>VITE_SCRIPT_URL</code>. See the setup guide below.</p>
+      <strong>⚙️ Connecta Google Sheets per desar els pronòstics</strong>
+      <p>Afegeix la URL del teu Apps Script a <code>.env.local</code> com a <code>VITE_SCRIPT_URL</code>.</p>
     </div>
   )
 }
