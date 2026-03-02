@@ -175,6 +175,13 @@ export default function App() {
   const [savedMsg, setSavedMsg] = useState('')
   const [filterRes,setFilterRes] = useState('all')
 
+  // Live clock — updates every 30 s so the lock engages at kickoff
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30_000)
+    return () => clearInterval(id)
+  }, [])
+
   useEffect(() => {
     fetchUpcoming().then(u => { setUpcoming(u); setLoadingUp(false) })
     fetchCompleted().then(c => { setCompleted(c); setLoadingComp(false) })
@@ -230,8 +237,11 @@ export default function App() {
 
   function selectPlayer(p) { setPlayer(p); localStorage.setItem('barca_player', p) }
 
+  const isMatchLocked = nextMatch ? nextMatch.date <= now : false
+
   async function handleSave() {
     if (!nextMatch || predH === '' || predA === '' || !player) return
+    if (nextMatch.date <= new Date()) return  // hard guard — match already started
     setSaving(true)
     await savePrediction(nextMatch.id, player, predH, predA)
     setPredictions(prev => ({
@@ -621,7 +631,7 @@ function PredResultRow({ label, h, a, pts }) {
       <span className="pred-score">{hasPred ? `${h}–${a}` : '—'}</span>
       {ptInfo
         ? <span className={`pred-pts ${ptInfo.cls}`}>{ptInfo.icon} {pts}pt{pts !== 1 ? 's' : ''}</span>
-        : <span className="pred-pts muted">sense pronòstic</span>
+        : <span className="pred-pts pts-0">✗ 0pts</span>
       }
     </div>
   )
@@ -711,14 +721,14 @@ function StandingsTab({ scoredMatches, standings, loading }) {
                 style={{ color: m.barcaGoals > m.opponentGoals ? '#27ae60' : m.barcaGoals === m.opponentGoals ? '#f39c12' : '#e74c3c' }}>
                 {m.barcaGoals}–{m.opponentGoals}
               </span>
-              <span className={`bd-pts ${vp != null ? PT[vp].cls : ''}`}>
-                {vp != null ? `${PT[vp].icon} ${vp}` : '—'}
+              <span className={`bd-pts ${vp != null ? PT[vp].cls : 'pts-0'}`}>
+                {vp != null ? `${PT[vp].icon} ${vp}` : '✗ 0'}
                 {pred.victorHome !== '' && pred.victorHome != null
                   ? <span className="bd-pred">({pred.victorHome}–{pred.victorAway})</span>
                   : <span className="bd-pred muted">sense pronòstic</span>}
               </span>
-              <span className={`bd-pts ${mp != null ? PT[mp].cls : ''}`}>
-                {mp != null ? `${PT[mp].icon} ${mp}` : '—'}
+              <span className={`bd-pts ${mp != null ? PT[mp].cls : 'pts-0'}`}>
+                {mp != null ? `${PT[mp].icon} ${mp}` : '✗ 0'}
                 {pred.maxHome !== '' && pred.maxHome != null
                   ? <span className="bd-pred">({pred.maxHome}–{pred.maxAway})</span>
                   : <span className="bd-pred muted">sense pronòstic</span>}
