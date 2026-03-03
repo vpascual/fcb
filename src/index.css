@@ -221,6 +221,8 @@ code   { background: var(--surface2); padding: 0.1em 0.35em; border-radius: 4px;
 }
 .pill:hover  { border-color: var(--barca-blue); color: var(--text); }
 .pill.active { color: #fff; font-weight: 700; }
+.pill.csv-btn { margin-left: auto; color: var(--barca-gold); border-color: var(--barca-gold); }
+.pill.csv-btn:hover { background: var(--barca-gold); color: #000; }
 
 /* ─── Scored match card (results tab) ────────────────────────────────────── */
 .matches-list { display: flex; flex-direction: column; gap: 0.6rem; }

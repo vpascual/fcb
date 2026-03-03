@@ -1001,6 +1001,32 @@ function SetupBanner() {
 const POS_COLOR = { G: '#f39c12', GK: '#f39c12', D: '#3498db', M: '#27ae60', F: '#e74c3c', FW: '#e74c3c' }
 const GROUPS    = ['Porter', 'Defenses', 'Migcampistes', 'Davanters']
 
+function downloadCsv(stats, season) {
+  const label = PLAYER_SEASON_LABELS[season] ?? season
+  const headers = [
+    'Nom', 'Posició', 'Grup', 'Dorsal', 'Partits',
+    'Gols', 'Assistències', 'Tirs a porta', 'Tirs totals',
+    'Duels guanyats', 'Faltes comeses',
+    'Targetes grogues', 'Targetes vermelles',
+    'Aturades', 'Gols encaixats',
+  ]
+  const rows = stats.map(p => [
+    p.name, p.position, posGroup(p.position), p.jersey, p.appearances,
+    p.goals, p.assists, p.shotsOnTarget, p.totalShots,
+    p.foulsWon, p.foulsCommitted,
+    p.yellowCards, p.redCards,
+    p.saves, p.goalsConceded,
+  ])
+  const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
+  a.download = `barca-jugadors-${label.replace('/', '-')}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 function PlayersTab({ stats, loading, season, onSeason }) {
   // Team max values per metric for radar normalization
   const maxValues = useMemo(() => {
@@ -1024,7 +1050,7 @@ function PlayersTab({ stats, loading, season, onSeason }) {
 
   return (
     <div>
-      {/* Season selector */}
+      {/* Season selector + CSV download */}
       <div className="filter-bar" style={{ marginBottom: '1.5rem' }}>
         {Object.entries(PLAYER_SEASON_LABELS).map(([year, label]) => (
           <button key={year}
@@ -1033,6 +1059,12 @@ function PlayersTab({ stats, loading, season, onSeason }) {
             onClick={() => onSeason(year)}
           >{label} · La Liga</button>
         ))}
+        {stats.length > 0 && (
+          <button className="pill csv-btn" onClick={() => downloadCsv(stats, season)}
+            title="Descarrega les estadístiques en format CSV">
+            ↓ CSV
+          </button>
+        )}
       </div>
 
       {loading
