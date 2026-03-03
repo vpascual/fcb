@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { createPortal } from 'react-dom'
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const BARCA_ID   = '83'
@@ -1074,7 +1075,7 @@ function PlayerCard({ player: p, maxValues }) {
               <RadarChart player={p} maxValues={maxValues} size={180} />
               <span className="radar-hint">⊕</span>
             </div>
-            {expanded && (
+            {expanded && createPortal(
               <div className="radar-modal" onClick={() => setExpanded(false)}>
                 <div className="radar-modal-inner" onClick={e => e.stopPropagation()}>
                   <p className="radar-modal-name">{p.shortName || p.name}</p>
@@ -1089,7 +1090,8 @@ function PlayerCard({ player: p, maxValues }) {
                   </div>
                   <button className="radar-modal-close" onClick={() => setExpanded(false)}>✕ Tanca</button>
                 </div>
-              </div>
+              </div>,
+              document.body
             )}
           </>
       }
