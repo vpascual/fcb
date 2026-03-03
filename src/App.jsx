@@ -1033,18 +1033,28 @@ function PlayersTab({ stats, loading, season, onSeason }) {
 }
 
 function PlayerCard({ player: p, maxValues }) {
-  const posColor = POS_COLOR[p.position] ?? POS_COLOR[p.position?.[0]] ?? 'var(--muted)'
-  const isGK     = ['G', 'GK'].includes(p.position)
-  const initials = (p.shortName || p.name).split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+  const posColor  = POS_COLOR[p.position] ?? POS_COLOR[p.position?.[0]] ?? 'var(--muted)'
+  const isGK      = ['G', 'GK'].includes(p.position)
+  const initials  = (p.shortName || p.name).split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+  const photoSrc  = `/fcb/players/${String(p.jersey).padStart(2, '0')}.jpg`
+  const [photoErr,    setPhotoErr   ] = useState(false)
+  const [expanded,    setExpanded   ] = useState(false)
 
   return (
     <div className="player-card">
-      {/* Header: avatar + name + position */}
+      {/* Header: photo/avatar + name */}
       <div className="plc-header">
-        <div className="plc-avatar" style={{ borderColor: posColor }}>
-          <span className="plc-avatar-num">{p.jersey || initials}</span>
-          <span className="plc-avatar-pos" style={{ background: posColor }}>{p.position}</span>
-        </div>
+        {!photoErr
+          ? <div className="plc-avatar" style={{ borderColor: posColor, padding: 0, overflow: 'hidden' }}>
+              <img src={photoSrc} alt={p.shortName} className="plc-photo"
+                onError={() => setPhotoErr(true)} />
+              <span className="plc-avatar-pos" style={{ background: posColor }}>{p.position}</span>
+            </div>
+          : <div className="plc-avatar" style={{ borderColor: posColor }}>
+              <span className="plc-avatar-num">{p.jersey || initials}</span>
+              <span className="plc-avatar-pos" style={{ background: posColor }}>{p.position}</span>
+            </div>
+        }
         <div className="plc-info">
           <span className="plc-name">{p.shortName || p.name}</span>
           <span className="plc-apps">{p.appearances} partits</span>
@@ -1059,7 +1069,29 @@ function PlayerCard({ player: p, maxValues }) {
             <GkStat val={p.shotsFaced}    label="Tirs rebuts" />
             <GkStat val={p.goalsConceded} label="Gols encaixats" />
           </div>
-        : <RadarChart player={p} maxValues={maxValues} />
+        : <>
+            <div className="radar-wrap" onClick={() => setExpanded(true)} title="Amplia el radar">
+              <RadarChart player={p} maxValues={maxValues} size={180} />
+              <span className="radar-hint">⊕</span>
+            </div>
+            {expanded && (
+              <div className="radar-modal" onClick={() => setExpanded(false)}>
+                <div className="radar-modal-inner" onClick={e => e.stopPropagation()}>
+                  <p className="radar-modal-name">{p.shortName || p.name}</p>
+                  <RadarChart player={p} maxValues={maxValues} size={280} />
+                  <div className="radar-modal-strip">
+                    <StripStat icon="⚽" val={p.goals}         label="Gols" gold />
+                    <StripStat icon="🎯" val={p.assists}       label="Assist." />
+                    <StripStat icon="👟" val={p.shotsOnTarget} label="Tirs/P" />
+                    <StripStat icon="💪" val={p.foulsWon}      label="Duels" />
+                    <StripStat icon="🔫" val={p.totalShots}    label="Tirs" />
+                    <StripStat icon="🛡️" val={p.foulsCommitted} label="Pressió" />
+                  </div>
+                  <button className="radar-modal-close" onClick={() => setExpanded(false)}>✕ Tanca</button>
+                </div>
+              </div>
+            )}
+          </>
       }
 
       {/* Bottom stats strip (outfield only) */}
