@@ -260,7 +260,26 @@ async function fetchPlayerStats(seasonYear = '2025') {
 // ─── Root App ─────────────────────────────────────────────────────────────────
 export default function App() {
   const [player, setPlayer] = useState(() => localStorage.getItem('barca_player'))
-  const [tab, setTab]       = useState('predict')
+
+  const TABS = ['predict', 'results', 'standings', 'players']
+  const [tab, setTab] = useState(() => {
+    const hash = window.location.hash.slice(1)
+    return TABS.includes(hash) ? hash : 'predict'
+  })
+
+  // Keep URL in sync with active tab
+  useEffect(() => { window.location.hash = tab }, [tab])
+
+  // Handle browser back/forward buttons
+  useEffect(() => {
+    const onHashChange = () => {
+      const hash = window.location.hash.slice(1)
+      if (TABS.includes(hash)) setTab(hash)
+    }
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
+
 
   const [upcoming,     setUpcoming    ] = useState([])
   const [completed,    setCompleted   ] = useState([])
