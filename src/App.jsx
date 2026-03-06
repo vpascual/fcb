@@ -343,8 +343,13 @@ export default function App() {
   const scoredMatches = useMemo(() =>
     completed.filter(m => predictions[m.id]).map(m => {
       const p  = predictions[m.id]
-      const vp = calcPoints(m.barcaGoals, m.opponentGoals, p.victorHome, p.victorAway)
-      const mp = calcPoints(m.barcaGoals, m.opponentGoals, p.maxHome,    p.maxAway)
+      // predH = home team goals, predA = away team goals
+      // calcPoints expects (barcaGoals, oppGoals, predBarca, predOpp)
+      // so for away games, FCB is the away team → swap predH/predA
+      const [vBarca, vOpp] = m.isHome ? [p.victorHome, p.victorAway] : [p.victorAway, p.victorHome]
+      const [mBarca, mOpp] = m.isHome ? [p.maxHome,    p.maxAway]    : [p.maxAway,    p.maxHome]
+      const vp = calcPoints(m.barcaGoals, m.opponentGoals, vBarca, vOpp)
+      const mp = calcPoints(m.barcaGoals, m.opponentGoals, mBarca, mOpp)
       return { ...m, pred: p, victorPts: vp, maxPts: mp }
     }),
     [completed, predictions]
@@ -590,6 +595,15 @@ function PredictCard({ match, player, oppId, predH, predA, onH, onA, onSave, sav
   const playerLabel = { victor: '👨 Victor', max: '👦 Max' }
   const oppLabel    = { victor: '👨 Victor', max: '👦 Max' }
 
+  // Home team on left, away team on right
+  const homeName = match.isHome ? 'FC Barcelona' : match.opponent
+  const homeLogo = match.isHome ? 'https://a.espncdn.com/i/teamlogos/soccer/500/83.png' : match.opponentLogo
+  const awayName = match.isHome ? match.opponent : 'FC Barcelona'
+  const awayLogo = match.isHome ? match.opponentLogo : 'https://a.espncdn.com/i/teamlogos/soccer/500/83.png'
+
+  // predH = home team goals, predA = away team goals — always left=home, right=away
+  const oppScore = oppPred ? `${oppPred.h} – ${oppPred.a}` : null
+
   return (
     <div className="predict-card">
       {/* League + date */}
@@ -602,20 +616,18 @@ function PredictCard({ match, player, oppId, predH, predA, onH, onA, onSave, sav
         }
       </div>
 
-      {/* Teams */}
+      {/* Teams: home on left, away on right */}
       <div className="pc-teams">
         <div className="pc-team">
-          <img src="https://a.espncdn.com/i/teamlogos/soccer/500/83.png" alt="FCB" className="pc-logo"
-            onError={e => { e.target.style.display = 'none' }} />
-          <span>FC Barcelona</span>
+          {homeLogo && <img src={homeLogo} alt={homeName} className="pc-logo"
+            onError={e => { e.target.style.display = 'none' }} />}
+          <span>{homeName}</span>
         </div>
-        <div className="pc-vs">{match.isHome ? 'vs' : '@'}</div>
+        <div className="pc-vs">vs</div>
         <div className="pc-team pc-team-r">
-          <span>{match.opponent}</span>
-          {match.opponentLogo && (
-            <img src={match.opponentLogo} alt={match.opponent} className="pc-logo"
-              onError={e => { e.target.style.display = 'none' }} />
-          )}
+          <span>{awayName}</span>
+          {awayLogo && <img src={awayLogo} alt={awayName} className="pc-logo"
+            onError={e => { e.target.style.display = 'none' }} />}
         </div>
       </div>
       <p className="pc-venue-note">{match.isHome ? '🏟️ Camp Nou — Partit a casa' : `✈️ Fora, contra el ${match.opponent}`}</p>
@@ -623,13 +635,18 @@ function PredictCard({ match, player, oppId, predH, predA, onH, onA, onSave, sav
       {/* Your prediction */}
       <div className="pc-pred-section">
         <div className="pc-pred-label">Pronòstic de {playerLabel[player]}</div>
-        <div className="pc-inputs-row">
-          <input type="number" min="0" max="20" className="score-input" placeholder="–"
-            value={predH} onChange={e => onH(e.target.value)} disabled={isLocked} />
-          <span className="input-sep">–</span>
-          <input type="number" min="0" max="20" className="score-input" placeholder="–"
-            value={predA} onChange={e => onA(e.target.value)} disabled={isLocked} />
-
+        <div className="pc-inputs-wrap">
+          <div className="pc-inputs-row">
+            <div className="pc-input-side">
+              <input type="number" min="0" max="20" className="score-input" placeholder="–"
+                value={predH} onChange={e => onH(e.target.value)} disabled={isLocked} />
+            </div>
+            <span className="input-sep">–</span>
+            <div className="pc-input-side pc-input-side-r">
+              <input type="number" min="0" max="20" className="score-input" placeholder="–"
+                value={predA} onChange={e => onA(e.target.value)} disabled={isLocked} />
+            </div>
+          </div>
           {!isLocked && (
             <button className="save-btn" onClick={onSave}
               disabled={saving || predH === '' || predA === ''}>
@@ -640,14 +657,17 @@ function PredictCard({ match, player, oppId, predH, predA, onH, onA, onSave, sav
         {savedMsg && <div className="saved-msg">{savedMsg}</div>}
       </div>
 
-      {/* Other player's prediction (revealed after you submit) */}
+      {/* Other player's prediction — only revealed once the match has started */}
       <div className="pc-opp-pred">
-        <div className="pc-pred-label">Pronòstic de {oppLabel[oppId]}</div>
-        {myPredStored
-          ? oppPred
-            ? <div className="opp-revealed">{oppPred.h} – {oppPred.a}</div>
+        <div className="pc-pred-label">
+          Pronòstic de {oppLabel[oppId]}
+          {!isLocked && oppPred && <span className="opp-submitted-badge">✓ Enviat</span>}
+        </div>
+        {isLocked
+          ? oppScore
+            ? <div className="opp-revealed">{oppScore}</div>
             : <div className="opp-pending">Encara no enviat</div>
-          : <div className="opp-hidden">🙈 Envia el teu per veure el seu</div>
+          : <div className="opp-hidden">🙈 Es revela quan comenci el partit</div>
         }
       </div>
     </div>
@@ -792,9 +812,9 @@ function ScoredMatchCard({ match }) {
         <span className="sc-badge" style={{ background: resultColor }}>{resultChar}</span>
       </div>
       <div className="sc-match">
-        <span>FC Barcelona</span>
-        <strong className="sc-score">{bh} – {bo}</strong>
-        <span>{match.opponent}</span>
+        <span>{match.isHome ? 'FC Barcelona' : match.opponent}</span>
+        <strong className="sc-score">{match.isHome ? bh : bo} – {match.isHome ? bo : bh}</strong>
+        <span>{match.isHome ? match.opponent : 'FC Barcelona'}</span>
       </div>
       <div className="sc-preds">
         <PredResultRow label="👨 Victor" h={pred.victorHome} a={pred.victorAway} pts={vp} />
@@ -831,22 +851,30 @@ function HistoryCard({ match }) {
       </div>
       <div className="mc-body">
         <div className="mc-team">
-          <img src="https://a.espncdn.com/i/teamlogos/soccer/500/83.png" alt="FCB" className="mc-logo"
-            onError={e => { e.target.style.display = 'none' }} />
-          <span className="mc-name">FC Barcelona</span>
+          {match.isHome ? (
+            <img src="https://a.espncdn.com/i/teamlogos/soccer/500/83.png" alt="FCB" className="mc-logo"
+              onError={e => { e.target.style.display = 'none' }} />
+          ) : (
+            match.opponentLogo && <img src={match.opponentLogo} alt={match.opponent} className="mc-logo"
+              onError={e => { e.target.style.display = 'none' }} />
+          )}
+          <span className="mc-name">{match.isHome ? 'FC Barcelona' : match.opponent}</span>
         </div>
         <div className="mc-score-wrap">
           <div className="mc-score">
-            <span>{match.barcaGoals >= 0 ? match.barcaGoals : '?'}</span>
+            <span>{match.isHome ? (match.barcaGoals >= 0 ? match.barcaGoals : '?') : (match.opponentGoals >= 0 ? match.opponentGoals : '?')}</span>
             <span className="mc-dash">–</span>
-            <span>{match.opponentGoals >= 0 ? match.opponentGoals : '?'}</span>
+            <span>{match.isHome ? (match.opponentGoals >= 0 ? match.opponentGoals : '?') : (match.barcaGoals >= 0 ? match.barcaGoals : '?')}</span>
           </div>
           <div className="mc-result-badge">{{ W: 'V', D: 'E', L: 'D' }[match.result]}</div>
         </div>
         <div className="mc-team mc-opponent">
-          <span className="mc-name">{match.opponent}</span>
-          {match.opponentLogo && (
-            <img src={match.opponentLogo} alt={match.opponent} className="mc-logo"
+          <span className="mc-name">{match.isHome ? match.opponent : 'FC Barcelona'}</span>
+          {match.isHome ? (
+            match.opponentLogo && <img src={match.opponentLogo} alt={match.opponent} className="mc-logo"
+              onError={e => { e.target.style.display = 'none' }} />
+          ) : (
+            <img src="https://a.espncdn.com/i/teamlogos/soccer/500/83.png" alt="FCB" className="mc-logo"
               onError={e => { e.target.style.display = 'none' }} />
           )}
         </div>
@@ -901,7 +929,7 @@ function StandingsTab({ scoredMatches, standings, loading }) {
               </span>
               <span className="bd-result"
                 style={{ color: m.barcaGoals > m.opponentGoals ? '#27ae60' : m.barcaGoals === m.opponentGoals ? '#f39c12' : '#e74c3c' }}>
-                {m.barcaGoals}–{m.opponentGoals}
+                {m.isHome ? `${m.barcaGoals}–${m.opponentGoals}` : `${m.opponentGoals}–${m.barcaGoals}`}
               </span>
               <span className={`bd-pts ${vp != null ? PT[vp].cls : 'pts-0'}`}>
                 {vp != null ? `${PT[vp].icon} ${vp}` : '✗ 0'}
