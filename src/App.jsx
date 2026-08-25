@@ -11,8 +11,17 @@ const LEAGUES = [
   { slug: 'esp.copa_del_rey', name: 'Copa del Rey',     abbr: 'Copa',   color: '#C0392B' },
   { slug: 'esp.super_cup',    name: 'Super Cup',        abbr: 'SSC',    color: '#8E44AD' },
 ]
-const RESULT_SEASONS = ['2025', '2024', '2023']
-const TWO_YEARS_AGO  = new Date('2024-02-28T00:00:00Z')
+// Season start year (Aug cutoff) — recomputed from today's date so this file
+// doesn't need a manual yearly update. Mirrors getMatchSeason() below.
+const CURRENT_SEASON_START = (() => {
+  const now = new Date()
+  return now.getMonth() >= 7 ? now.getFullYear() : now.getFullYear() - 1
+})()
+const CURRENT_SEASON  = `${CURRENT_SEASON_START}/${String(CURRENT_SEASON_START + 1).slice(2)}`
+const PREVIOUS_SEASON = `${CURRENT_SEASON_START - 1}/${String(CURRENT_SEASON_START).slice(2)}`
+
+const RESULT_SEASONS = [0, 1, 2].map(i => String(CURRENT_SEASON_START - i))
+const TWO_YEARS_AGO  = new Date(Date.UTC(CURRENT_SEASON_START - (RESULT_SEASONS.length - 1), 7, 1))
 
 // ─── Scoring ──────────────────────────────────────────────────────────────────
 function calcPoints(barcaGoals, oppGoals, predH, predA) {
@@ -183,7 +192,9 @@ async function savePrediction(matchId, player, h, a) {
 
 // ─── ESPN: player stats ───────────────────────────────────────────────────────
 // ESPN season year = start year of season (2025 → 2025/26, 2024 → 2024/25)
-const PLAYER_SEASON_LABELS = { '2025': '2025/26', '2024': '2024/25', '2023': '2023/24' }
+const PLAYER_SEASON_LABELS = Object.fromEntries(
+  RESULT_SEASONS.map(y => [y, `${y}/${String(Number(y) + 1).slice(2)}`])
+)
 const PLAYER_CACHE_TTL = 12 * 60 * 60 * 1000  // 12 h
 
 // Radar axes: attacking at top (0°, 60°, 300°), defensive at bottom (120°, 180°, 240°)
@@ -295,7 +306,7 @@ export default function App() {
   const [filterRes,    setFilterRes    ] = useState('all')
   const [filterSeason, setFilterSeason ] = useState('all')
 
-  const [playerSeason,    setPlayerSeason   ] = useState('2025')
+  const [playerSeason,    setPlayerSeason   ] = useState(RESULT_SEASONS[0])
   const [playerStats,     setPlayerStats    ] = useState([])
   const [loadingPlayers,  setLoadingPlayers ] = useState(false)
   const playersFetchedRef = useRef(new Set())
@@ -355,10 +366,46 @@ export default function App() {
     [completed, predictions]
   )
 
+  // Only this season's matches count toward the live standings — both players
+  // start each season at 0 pts, no manual reset needed.
+  const currentSeasonMatches = useMemo(() =>
+    scoredMatches.filter(m => m.season === CURRENT_SEASON),
+    [scoredMatches]
+  )
+
   const standings = useMemo(() => ({
-    victor: scoredMatches.reduce((s, m) => s + (m.victorPts ?? 0), 0),
-    max:    scoredMatches.reduce((s, m) => s + (m.maxPts    ?? 0), 0),
-  }), [scoredMatches])
+    victor: currentSeasonMatches.reduce((s, m) => s + (m.victorPts ?? 0), 0),
+    max:    currentSeasonMatches.reduce((s, m) => s + (m.maxPts    ?? 0), 0),
+  }), [currentSeasonMatches])
+
+  // Previous season recap: iterate ALL completed matches of that season (not
+  // just scoredMatches) so missed predictions ("oblidats") get counted too.
+  const previousSeasonStats = useMemo(() => {
+    const matches = completed.filter(m => m.season === PREVIOUS_SEASON)
+    const mk = playerId => {
+      let placed = 0, forgotten = 0, exact = 0, gd = 0, result = 0, wrong = 0, points = 0
+      matches.forEach(m => {
+        const p = predictions[m.id]
+        const h = p ? p[`${playerId}Home`] : null
+        const a = p ? p[`${playerId}Away`] : null
+        if (h === '' || h == null) { forgotten++; return }
+        placed++
+        const [pb, po] = m.isHome ? [h, a] : [a, h]
+        const pts = calcPoints(m.barcaGoals, m.opponentGoals, pb, po)
+        points += pts ?? 0
+        if      (pts === 5) exact++
+        else if (pts === 3) gd++
+        else if (pts === 1) result++
+        else                wrong++
+      })
+      const hits = exact + gd + result
+      return {
+        placed, forgotten, exact, gd, result, wrong, hits, points,
+        accuracy: placed > 0 ? Math.round((hits / placed) * 100) : 0,
+      }
+    }
+    return { total: matches.length, victor: mk('victor'), max: mk('max') }
+  }, [completed, predictions])
 
   const myPredStored = nextMatch && (() => {
     const p = predictions[nextMatch.id]
@@ -435,7 +482,7 @@ export default function App() {
                   myPredStored={myPredStored}
                   oppPred={oppPred}
                   standings={standings}
-                  hasScored={scoredMatches.length > 0}
+                  hasScored={currentSeasonMatches.length > 0}
                   scriptConfigured={!!SCRIPT_URL}
                 />
               )}
@@ -457,8 +504,9 @@ export default function App() {
 
               {tab === 'standings' && (
                 <StandingsTab
-                  scoredMatches={scoredMatches}
+                  scoredMatches={currentSeasonMatches}
                   standings={standings}
+                  previousSeasonStats={previousSeasonStats}
                   loading={loadingComp || loadingPreds}
                 />
               )}
@@ -493,7 +541,7 @@ function Header({ player, standings, onSwitch }) {
           onError={e => { e.target.style.display = 'none' }} />
         <div className="header-text">
           <h1>Pronòstics FCB</h1>
-          <p>Victor 👨 vs Max 👦 · 2025/26</p>
+          <p>Victor 👨 vs Max 👦 · {CURRENT_SEASON}</p>
         </div>
         {p && (
           <button className="player-chip" onClick={onSwitch}>
@@ -884,75 +932,130 @@ function HistoryCard({ match }) {
 }
 
 // ─── Standings tab ────────────────────────────────────────────────────────────
-function StandingsTab({ scoredMatches, standings, loading }) {
+function StandingsTab({ scoredMatches, standings, previousSeasonStats, loading }) {
   if (loading) return <Spinner label="Carregant classificació…" />
-
-  if (scoredMatches.length === 0) return (
-    <div>
-      <EmptyCard icon="🏆" text="Encara no hi ha partits puntuats.">
-        <p className="muted" style={{ marginTop: '0.5rem' }}>
-          Un cop envieu els pronòstics i es jugui un partit,<br />els punts apareixeran aquí automàticament.
-        </p>
-      </EmptyCard>
-      <ScoringGuide />
-    </div>
-  )
 
   const leader = standings.victor > standings.max ? 'victor'
                : standings.max > standings.victor ? 'max' : null
 
   return (
     <div>
-      <div className="big-scoreboard">
-        <BigPlayerCard id="victor" emoji="👨" label="Victor" pts={standings.victor} leading={leader === 'victor'} />
-        <div className="bsc-vs">vs</div>
-        <BigPlayerCard id="max"    emoji="👦" label="Max"    pts={standings.max}    leading={leader === 'max'}    />
-      </div>
+      {scoredMatches.length === 0
+        ? (
+          <EmptyCard icon="🏆" text={`Encara no hi ha partits puntuats de la temporada ${CURRENT_SEASON}.`}>
+            <p className="muted" style={{ marginTop: '0.5rem' }}>
+              Un cop envieu els pronòstics i es jugui un partit,<br />els punts apareixeran aquí automàticament.
+            </p>
+          </EmptyCard>
+        )
+        : (
+          <>
+            <div className="big-scoreboard">
+              <BigPlayerCard id="victor" emoji="👨" label="Victor" pts={standings.victor} leading={leader === 'victor'} />
+              <div className="bsc-vs">vs</div>
+              <BigPlayerCard id="max"    emoji="👦" label="Max"    pts={standings.max}    leading={leader === 'max'}    />
+            </div>
+
+            <h2 className="section-title" style={{ marginTop: '2rem' }}>Resum per partits</h2>
+            <div className="breakdown">
+              <div className="bd-header">
+                <span>Partit</span>
+                <span>Resultat</span>
+                <span>👨 Victor</span>
+                <span>👦 Max</span>
+              </div>
+              {scoredMatches.map(m => {
+                const { victorPts: vp, maxPts: mp, pred } = m
+                return (
+                  <div key={m.id} className="bd-row">
+                    <span className="bd-match">
+                      <span className="bd-opp">{m.opponent}</span>
+                      <span className="bd-date muted">{m.dateStr}</span>
+                    </span>
+                    <span className="bd-result"
+                      style={{ color: m.barcaGoals > m.opponentGoals ? '#27ae60' : m.barcaGoals === m.opponentGoals ? '#f39c12' : '#e74c3c' }}>
+                      {m.isHome ? `${m.barcaGoals}–${m.opponentGoals}` : `${m.opponentGoals}–${m.barcaGoals}`}
+                    </span>
+                    <span className={`bd-pts ${vp != null ? PT[vp].cls : 'pts-0'}`}>
+                      {vp != null ? `${PT[vp].icon} ${vp}` : '✗ 0'}
+                      {pred.victorHome !== '' && pred.victorHome != null
+                        ? <span className="bd-pred">({pred.victorHome}–{pred.victorAway})</span>
+                        : <span className="bd-pred muted">sense pronòstic</span>}
+                    </span>
+                    <span className={`bd-pts ${mp != null ? PT[mp].cls : 'pts-0'}`}>
+                      {mp != null ? `${PT[mp].icon} ${mp}` : '✗ 0'}
+                      {pred.maxHome !== '' && pred.maxHome != null
+                        ? <span className="bd-pred">({pred.maxHome}–{pred.maxAway})</span>
+                        : <span className="bd-pred muted">sense pronòstic</span>}
+                    </span>
+                  </div>
+                )
+              })}
+              <div className="bd-row bd-total">
+                <span><strong>Total</strong></span>
+                <span></span>
+                <span className="bd-pts"><strong>{standings.victor} pts</strong></span>
+                <span className="bd-pts"><strong>{standings.max} pts</strong></span>
+              </div>
+            </div>
+          </>
+        )
+      }
 
       <ScoringGuide />
 
-      <h2 className="section-title" style={{ marginTop: '2rem' }}>Resum per partits</h2>
-      <div className="breakdown">
-        <div className="bd-header">
-          <span>Partit</span>
-          <span>Resultat</span>
+      <h2 className="section-title" style={{ marginTop: '2rem' }}>🏅 Temporada passada · {PREVIOUS_SEASON}</h2>
+      <LastSeasonSummary stats={previousSeasonStats} />
+    </div>
+  )
+}
+
+function LastSeasonSummary({ stats }) {
+  if (!stats || stats.total === 0) {
+    return <EmptyCard icon="🏅" text="No hi ha dades de la temporada anterior." />
+  }
+
+  const { victor: v, max: m } = stats
+  const leader = v.points > m.points ? 'victor' : m.points > v.points ? 'max' : null
+  const leaderLabel = leader === 'victor' ? '👨 Victor' : leader === 'max' ? '👦 Max' : null
+
+  const rows = [
+    { label: 'Pronòstics fets',       v: v.placed,        m: m.placed        },
+    { label: 'Oblidats',              v: v.forgotten,     m: m.forgotten     },
+    { label: '🎯 Exactes',            v: v.exact,          m: m.exact         },
+    { label: '⭐ Golejada correcta',   v: v.gd,             m: m.gd            },
+    { label: '✓ Resultat',            v: v.result,         m: m.result        },
+    { label: '✗ Errats',              v: v.wrong,          m: m.wrong         },
+    { label: 'Encerts',               v: v.hits,           m: m.hits          },
+    { label: '% Encert',              v: `${v.accuracy}%`, m: `${m.accuracy}%` },
+    { label: 'Punts',                 v: v.points,         m: m.points        },
+  ]
+
+  return (
+    <div>
+      <div className="big-scoreboard">
+        <BigPlayerCard id="victor" emoji="👨" label="Victor" pts={v.points} leading={leader === 'victor'} />
+        <div className="bsc-vs">vs</div>
+        <BigPlayerCard id="max"    emoji="👦" label="Max"    pts={m.points} leading={leader === 'max'}    />
+      </div>
+
+      <p className="ls-winner">
+        {leaderLabel ? `👑 ${leaderLabel} va guanyar la temporada passada` : '🤝 Empat la temporada passada'}
+      </p>
+
+      <div className="ls-table">
+        <div className="ls-row ls-row-header">
+          <span></span>
           <span>👨 Victor</span>
           <span>👦 Max</span>
         </div>
-        {scoredMatches.map(m => {
-          const { victorPts: vp, maxPts: mp, pred } = m
-          return (
-            <div key={m.id} className="bd-row">
-              <span className="bd-match">
-                <span className="bd-opp">{m.opponent}</span>
-                <span className="bd-date muted">{m.dateStr}</span>
-              </span>
-              <span className="bd-result"
-                style={{ color: m.barcaGoals > m.opponentGoals ? '#27ae60' : m.barcaGoals === m.opponentGoals ? '#f39c12' : '#e74c3c' }}>
-                {m.isHome ? `${m.barcaGoals}–${m.opponentGoals}` : `${m.opponentGoals}–${m.barcaGoals}`}
-              </span>
-              <span className={`bd-pts ${vp != null ? PT[vp].cls : 'pts-0'}`}>
-                {vp != null ? `${PT[vp].icon} ${vp}` : '✗ 0'}
-                {pred.victorHome !== '' && pred.victorHome != null
-                  ? <span className="bd-pred">({pred.victorHome}–{pred.victorAway})</span>
-                  : <span className="bd-pred muted">sense pronòstic</span>}
-              </span>
-              <span className={`bd-pts ${mp != null ? PT[mp].cls : 'pts-0'}`}>
-                {mp != null ? `${PT[mp].icon} ${mp}` : '✗ 0'}
-                {pred.maxHome !== '' && pred.maxHome != null
-                  ? <span className="bd-pred">({pred.maxHome}–{pred.maxAway})</span>
-                  : <span className="bd-pred muted">sense pronòstic</span>}
-              </span>
-            </div>
-          )
-        })}
-        <div className="bd-row bd-total">
-          <span><strong>Total</strong></span>
-          <span></span>
-          <span className="bd-pts"><strong>{standings.victor} pts</strong></span>
-          <span className="bd-pts"><strong>{standings.max} pts</strong></span>
-        </div>
-
+        {rows.map(r => (
+          <div key={r.label} className="ls-row">
+            <span className="ls-label">{r.label}</span>
+            <span className="ls-val">{r.v}</span>
+            <span className="ls-val">{r.m}</span>
+          </div>
+        ))}
       </div>
     </div>
   )

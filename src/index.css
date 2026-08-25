@@ -317,6 +317,20 @@ code   { background: var(--surface2); padding: 0.1em 0.35em; border-radius: 4px;
 .bd-pts    { font-weight: 700; }
 .bd-pred   { font-size: 0.72rem; color: var(--muted); margin-left: 0.3rem; }
 
+/* ─── Last season summary ─────────────────────────────────────────────────── */
+.ls-winner { text-align: center; font-size: 0.9rem; font-weight: 700; color: var(--barca-gold); margin: 0.75rem 0 1.25rem; }
+
+.ls-table { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.ls-row {
+  display: grid; grid-template-columns: 1fr auto auto;
+  gap: 0.75rem; padding: 0.55rem 1rem; align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+.ls-row:last-child { border-bottom: none; }
+.ls-row-header { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 700; }
+.ls-label { font-size: 0.82rem; }
+.ls-val   { font-size: 0.82rem; font-weight: 700; text-align: right; min-width: 44px; }
+
 /* ─── Scoring guide ───────────────────────────────────────────────────────── */
 .scoring-guide {
   background: var(--surface); border: 1px solid var(--border);
